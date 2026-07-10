@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Expression Specificity Atlas</title>
+<title>TransTEx Expression Groups</title>
 <style>
   :root{
     --page:#e7eae8; --panel:#fbfcfb; --ink:#191c27; --muted:#657084;
@@ -31,8 +31,7 @@
     font-size:clamp(24px,4vw,38px); font-weight:650; letter-spacing:-.02em;
     margin:0 0 4px; line-height:1.05;
   }
-  .sub{color:var(--muted); margin:0; max-width:60ch; font-size:14px}
-  /* stain gradient rule = the one bold flourish */
+  .sub{color:var(--muted); margin:0; max-width:62ch; font-size:14px}
   .rule{height:3px;border-radius:2px;margin:16px 0 0;
     background:linear-gradient(90deg,var(--hematoxylin),var(--eosin) 55%,#c65a2e);}
 
@@ -58,7 +57,6 @@
   button:hover{border-color:var(--hematoxylin)}
   button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 
-  /* instrument readout = signature element */
   .readout{
     display:flex; flex-wrap:wrap; align-items:center; gap:18px;
     padding:12px 4px 14px; border-top:1px solid var(--hair2);
@@ -83,9 +81,9 @@
   }
   tbody td{padding:9px 14px;border-bottom:1px solid var(--hair2);white-space:nowrap}
   tbody tr:hover{background:#f4f2f7}
+  .tid{font-family:var(--mono);font-size:12px}
   .gid{font-family:var(--mono);font-size:12px;color:var(--muted)}
   .sym{font-weight:600}
-  .val{font-family:var(--mono);text-align:right}
   .chip{display:inline-block;font-family:var(--mono);font-size:11px;
     padding:2px 8px;border-radius:100px;color:#fff;letter-spacing:.02em;white-space:nowrap}
 
@@ -101,25 +99,25 @@
 <body>
 <div class="wrap">
   <header>
-    <p class="eyebrow">Human · Mouse · Cancer — client-side query</p>
-    <h1>Expression Specificity Atlas</h1>
-    <p class="sub">Look up how each gene is classified across tissues and cancers. All filtering runs in your browser over a single Parquet file — no server.</p>
+    <p class="eyebrow">TransTEx · transcript-level expression groups</p>
+    <h1>TransTEx Expression Groups</h1>
+    <p class="sub">Look up the TransTEx expression-group category for each transcript across tissues and cancers. All filtering runs in your browser over a single Parquet file — no server.</p>
     <div class="rule"></div>
   </header>
 
   <div class="controls">
     <div class="field"><label for="f-species">Species</label><select id="f-species"></select></div>
-    <div class="field"><label for="f-domain">Map</label><select id="f-domain"></select></div>
-    <div class="field"><label for="f-context">Tissue / Cancer</label><select id="f-context"></select></div>
-    <div class="field"><label for="f-class">Class</label><select id="f-class"></select></div>
-    <div class="field"><label for="f-gene">Gene (id or symbol)</label><input id="f-gene" type="text" placeholder="e.g. GFAP or ENSG…" autocomplete="off"></div>
+    <div class="field"><label for="f-tissue">Tissue / Cancer</label><select id="f-tissue"></select></div>
+    <div class="field"><label for="f-category">Category</label><select id="f-category"></select></div>
+    <div class="field"><label for="f-gene">Transcript / gene</label><input id="f-gene" type="text" placeholder="e.g. GFAP, ENSG…, ENST…" autocomplete="off"></div>
     <div class="field reset"><button id="reset" type="button">Reset filters</button></div>
   </div>
 
   <div class="readout">
     <div class="stat"><b id="s-rows">—</b><span>Rows</span></div>
+    <div class="stat"><b id="s-tx">—</b><span>Transcripts</span></div>
     <div class="stat"><b id="s-genes">—</b><span>Genes</span></div>
-    <div class="stat"><b id="s-ctx">—</b><span>Contexts</span></div>
+    <div class="stat"><b id="s-tis">—</b><span>Tissues</span></div>
     <div class="spacer"></div>
     <button class="dl" id="download" disabled>Download filtered CSV</button>
   </div>
@@ -127,10 +125,10 @@
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th>Gene</th><th>Symbol</th><th>Species</th><th>Map</th>
-        <th>Context</th><th>Class</th><th style="text-align:right">Value</th>
+        <th>Transcript</th><th>Gene ID</th><th>Gene name</th>
+        <th>Species</th><th>Tissue / Cancer</th><th>Category</th>
       </tr></thead>
-      <tbody id="rows"><tr><td colspan="7" class="msg" id="status">Loading DuckDB engine…</td></tr></tbody>
+      <tbody id="rows"><tr><td colspan="6" class="msg" id="status">Loading DuckDB engine…</td></tr></tbody>
     </table>
   </div>
   <p class="foot" id="foot">Showing up to 500 rows in the table; CSV export includes the full filtered set.</p>
@@ -139,14 +137,18 @@
 <script type="module">
 import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm";
 
-const PARQUET = "atlas.parquet";   // sits next to this file
+const PARQUET = "TransTEx_dataset.parquet";   // sits next to this file
+
+// case-insensitive category -> colour, with a safe fallback for anything unlisted
 const CLASS_COLORS = {
-  TSP:"#b32b6e", TEN:"#6a53b8", WIDE:"#2f8f83", LOW:"#7c8698", NULL:"#b0b7bc",
-  cancer_specific:"#a01b4a", cancer_enhanced:"#7a3fb0", cancer_enriched:"#c65a2e",
-  cancer_low_specificity:"#6b7c8c", not_detected:"#b0b7bc"
+  tsp:"#b32b6e", ten:"#6a53b8", wide:"#2f8f83", low:"#7c8698", null:"#b0b7bc",
+  cansp:"#a01b4a", canen:"#7a3fb0", canenh:"#7a3fb0", canwide:"#2f8f83",
+  canlow:"#6b7c8c", cannull:"#b0b7bc", canhigh:"#c65a2e", norhigh:"#3f6fb0"
 };
+const colorFor = c => CLASS_COLORS[String(c).toLowerCase()] || "#8a8f99";
+
 const $ = id => document.getElementById(id);
-const status = m => { $("rows").innerHTML = `<tr><td colspan="7" class="msg">${m}</td></tr>`; };
+const status = m => { $("rows").innerHTML = `<tr><td colspan="6" class="msg">${m}</td></tr>`; };
 const esc = s => String(s).replace(/'/g,"''");
 
 let conn = null;
@@ -166,7 +168,7 @@ async function init(){
     const buf = new Uint8Array(await (await fetch(PARQUET)).arrayBuffer());
     await db.registerFileBuffer(PARQUET, buf);
     conn = await db.connect();
-    await conn.query(`CREATE VIEW atlas AS SELECT * FROM read_parquet('${PARQUET}')`);
+    await conn.query(`CREATE VIEW tx AS SELECT * FROM read_parquet('${PARQUET}')`);
 
     await fillStatic();
     wire();
@@ -179,7 +181,7 @@ async function init(){
 
 const rowsOf = async sql => (await conn.query(sql)).toArray().map(r=>r.toJSON());
 const distinct = async (col, where="TRUE") =>
-  (await rowsOf(`SELECT DISTINCT ${col} AS v FROM atlas WHERE ${where} ORDER BY 1`)).map(r=>r.v);
+  (await rowsOf(`SELECT DISTINCT ${col} AS v FROM tx WHERE ${where} AND ${col} IS NOT NULL ORDER BY 1`)).map(r=>r.v);
 
 function setOptions(sel, values, allLabel){
   const cur = sel.value;
@@ -192,86 +194,86 @@ async function fillStatic(){
   setOptions($("f-species"), await distinct("species"), "All species");
 }
 
-function whereClause({withContext=true, withClass=true}={}){
-  const c=[]; const sp=$("f-species").value, dm=$("f-domain").value,
-    cx=$("f-context").value, cl=$("f-class").value, g=$("f-gene").value.trim();
+function whereClause({withTissue=true, withCategory=true}={}){
+  const c=[]; const sp=$("f-species").value, ti=$("f-tissue").value,
+    ca=$("f-category").value, g=$("f-gene").value.trim();
   if(sp) c.push(`species='${esc(sp)}'`);
-  if(dm) c.push(`domain='${esc(dm)}'`);
-  if(withContext && cx) c.push(`context='${esc(cx)}'`);
-  if(withClass && cl) c.push(`specificity_class='${esc(cl)}'`);
-  if(g) c.push(`(gene_id ILIKE '%${esc(g)}%' OR symbol ILIKE '%${esc(g)}%')`);
+  if(withTissue && ti) c.push(`tissue='${esc(ti)}'`);
+  if(withCategory && ca) c.push(`category='${esc(ca)}'`);
+  if(g) c.push(`(transcript ILIKE '%${esc(g)}%' OR gene_id ILIKE '%${esc(g)}%' OR gene_name ILIKE '%${esc(g)}%')`);
   return c.length?c.join(" AND "):"TRUE";
 }
 
 async function refreshDependents(){
-  // domain depends on species; context & class depend on species+domain
-  const wSp = $("f-species").value ? `species='${esc($("f-species").value)}'` : "TRUE";
-  setOptions($("f-domain"), await distinct("domain", wSp), "All maps");
-  const base = whereClause({withContext:false, withClass:false});
-  setOptions($("f-context"), await distinct("context", base), "All contexts");
-  setOptions($("f-class"), await distinct("specificity_class", base), "All classes");
+  // tissue & category options depend on the chosen species
+  const base = whereClause({withTissue:false, withCategory:false});
+  setOptions($("f-tissue"),   await distinct("tissue",   base), "All tissues / cancers");
+  setOptions($("f-category"), await distinct("category", base), "All categories");
 }
 
 function chip(cls){
-  const bg = CLASS_COLORS[cls] || "#888";
-  return `<span class="chip" style="background:${bg}">${cls}</span>`;
+  return `<span class="chip" style="background:${colorFor(cls)}">${cls}</span>`;
 }
 
 async function run(){
   if(!conn) return;
   const where = whereClause();
   const agg = (await rowsOf(
-    `SELECT count(*) AS "rows", count(DISTINCT gene_id) AS "genes", count(DISTINCT context) AS "ctx"
-     FROM atlas WHERE ${where}`))[0];
-  $("s-rows").textContent  = Number(agg.rows).toLocaleString();
-  $("s-genes").textContent = Number(agg.genes).toLocaleString();
-  $("s-ctx").textContent   = Number(agg.ctx).toLocaleString();
+    `SELECT count(*) AS "n_rows",
+            count(DISTINCT transcript) AS "n_tx",
+            count(DISTINCT gene_id)    AS "n_genes",
+            count(DISTINCT tissue)     AS "n_tis"
+     FROM tx WHERE ${where}`))[0];
+  $("s-rows").textContent  = Number(agg.n_rows).toLocaleString();
+  $("s-tx").textContent    = Number(agg.n_tx).toLocaleString();
+  $("s-genes").textContent = Number(agg.n_genes).toLocaleString();
+  $("s-tis").textContent   = Number(agg.n_tis).toLocaleString();
+  $("download").disabled = Number(agg.n_rows)===0;
 
   const rows = await rowsOf(
-    `SELECT gene_id,symbol,species,domain,context,specificity_class cls,value
-     FROM atlas WHERE ${where}
-     ORDER BY symbol,domain,context LIMIT 500`);
+    `SELECT transcript,gene_id,gene_name,species,tissue,category
+     FROM tx WHERE ${where}
+     ORDER BY gene_name,tissue,transcript LIMIT 500`);
   if(!rows.length){ status("No rows match these filters. Loosen one to see results."); return; }
   $("rows").innerHTML = rows.map(r=>`<tr>
-      <td class="gid">${r.gene_id}</td>
-      <td class="sym">${r.symbol}</td>
-      <td>${r.species}</td>
-      <td>${r.domain}</td>
-      <td>${r.context}</td>
-      <td>${chip(r.cls)}</td>
-      <td class="val">${Number(r.value).toFixed(2)}</td>
+      <td class="tid">${r.transcript ?? ""}</td>
+      <td class="gid">${r.gene_id ?? ""}</td>
+      <td class="sym">${r.gene_name ?? ""}</td>
+      <td>${r.species ?? ""}</td>
+      <td>${r.tissue ?? ""}</td>
+      <td>${chip(r.category)}</td>
     </tr>`).join("");
   $("foot").textContent =
-    Number(agg.rows) > 500
-      ? `Showing 500 of ${Number(agg.rows).toLocaleString()} matching rows. CSV export includes all of them.`
+    Number(agg.n_rows) > 500
+      ? `Showing 500 of ${Number(agg.n_rows).toLocaleString()} matching rows. CSV export includes all of them.`
       : `Showing all ${rows.length} matching rows.`;
 }
 
 async function download(){
   const rows = await rowsOf(
-    `SELECT gene_id,symbol,species,domain,context,specificity_class,value
-     FROM atlas WHERE ${whereClause()} ORDER BY symbol,domain,context`);
+    `SELECT transcript,gene_id,gene_name,species,tissue,category
+     FROM tx WHERE ${whereClause()} ORDER BY gene_name,tissue,transcript`);
   if(!rows.length) return;
   const cols = Object.keys(rows[0]);
   const csv = [cols.join(",")].concat(
     rows.map(r=>cols.map(c=>{
-      const v=String(r[c]); return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;
+      const v = r[c] == null ? "" : String(r[c]);
+      return /[",\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v;
     }).join(","))).join("\n");
   const url = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   const a = Object.assign(document.createElement("a"),
-    {href:url, download:"atlas_filtered.csv"});
+    {href:url, download:"TransTEx_filtered.csv"});
   a.click(); URL.revokeObjectURL(url);
 }
 
 function wire(){
   $("f-species").addEventListener("change", async()=>{ await refreshDependents(); run(); });
-  $("f-domain").addEventListener("change", async()=>{ await refreshDependents(); run(); });
-  $("f-context").addEventListener("change", run);
-  $("f-class").addEventListener("change", run);
+  $("f-tissue").addEventListener("change", run);
+  $("f-category").addEventListener("change", run);
   let t; $("f-gene").addEventListener("input", ()=>{ clearTimeout(t); t=setTimeout(run,220); });
   $("download").addEventListener("click", download);
   $("reset").addEventListener("click", async()=>{
-    ["f-species","f-domain","f-context","f-class"].forEach(id=>$(id).value="");
+    ["f-species","f-tissue","f-category"].forEach(id=>$(id).value="");
     $("f-gene").value=""; await refreshDependents(); run();
   });
   refreshDependents();
