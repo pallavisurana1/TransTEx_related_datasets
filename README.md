@@ -1,4 +1,4 @@
-# TransTEx-related expression groupings 
+# TransTEx expression groupings 
 ## (human · mouse · cancer)
 
 A browser tool for looking up **TransTEx** transcript
@@ -6,7 +6,7 @@ expression-group classifications across three resources — **human tissues
 (GTEx)**, a **mouse body map**, and **solid-tumor cancers (TCGA solid tumors)** —
 and downloading any filtered slice as CSV.
 
-Available: https://pallavisurana1.github.io/TransTEx_related_datasets/
+Available: https://pallavisurana1.github.io/TransTEx_datasets/
 
 ## What's in it
 
